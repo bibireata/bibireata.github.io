@@ -6,7 +6,7 @@ var elem = document.body;
 var two = new Two(params).appendTo(elem);
 
 var side = 20;
-var iterations = 4;
+var iterations = 20;
 const pi = Math.PI;
 const pi2 = pi / 2;
 const pi3 = pi / 3;
@@ -14,6 +14,19 @@ const pi3 = pi / 3;
 nodeMap = {};
 border = [];
 border2 = [];
+
+function euclideanRadius(x) {
+    var dx = x[0] + Math.sqrt(3) * x[1];
+    var dy = x[2] + Math.sqrt(3) * x[3];
+    return Math.sqrt(dx * dx + dy * dy);
+}
+
+function remainingAngle(n) {
+    return 12 - n.squares * 3 - n.triangles * 2;
+}
+
+const nodeComparator = (a, b) => remainingAngle(a) - remainingAngle(b);
+nodeHeap = new heap.Heap();
 
 // random int r: a <= r < b
 function randomInt(a, b) {
@@ -71,21 +84,37 @@ class Node {
 
     makeShapes() {
         var shapes = [];
-        for (var i = 0;i < 2 - this.squares;i++) {
-            shapes.push(3);
+        if (this.squares > 2) {
+            for (var i = 0;i < 4 - this.squares;i++) {
+                shapes.push(3);
+            }
+            this.squares = 4;
         }
-        for (var i = 0;i < 3 - this.triangles;i++) {
-            shapes.push(2);
+        else if (this.triangles > 3) {
+            for (var i = 0;i < 6 - this.squares;i++) {
+                shapes.push(2);
+            }
+            this.triangles = 6;
+        } 
+        else {
+            for (var i = 0;i < 2 - this.squares;i++) {
+                shapes.push(3);
+            }
+            for (var i = 0;i < 3 - this.triangles;i++) {
+                shapes.push(2);
+            }
+            this.squares = 2;
+            this.triangles = 3;
+        }
+        if (this.squares*3+this.triangles*2 > 12) {
+            console.log("Fault", this);
         }
         shuffle(shapes);
-        console.log(this, shapes);
         var angle = this.angle;
         for (var i = 0;i < shapes.length;i++) {
             this.makePolygon(angle, shapes[i]);
             angle = (angle + shapes[i]) % 12;
         }
-        this.squares = 2;
-        this.triangles = 3;
     }
 
     mark(angle, shape) {
@@ -106,12 +135,7 @@ class Node {
             var x2 = move(x1, angle);
             if (nodeMap[x2] == undefined) {
                 nodeMap[x2] = new Node(x2, (angle + 6) % 12);
-                if (shape == 3 && i == 1) {
-                    border2.push(nodeMap[x2]);
-                }
-                else {
-                    border.push(nodeMap[x2]);
-                }
+                nodeHeap.push(nodeMap[x2]);
             }
             angle = (angle + 6 - shape) % 12;
             nodeMap[x2].mark(angle, shape);
@@ -122,14 +146,11 @@ class Node {
 
 }
 
-border.push(new Node([0, 0, 0, 0], 0));
+nodeHeap.push(new Node([0, 0, 0, 0], 0));
 for (var i = 0;i < iterations;i++) {
-    var nodes = border;
-    border = border2;
-    border2 = [];
-    for (var j = 0;j < nodes.length;j++) {
-        nodes[j].makeShapes();
-    }
+    var node = nodeHeap.pop();
+    console.log(remainingAngle(node));
+    node.makeShapes();
 }
 
 

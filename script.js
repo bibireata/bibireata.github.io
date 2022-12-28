@@ -6,14 +6,16 @@ var elem = document.body;
 var two = new Two(params).appendTo(elem);
 
 var side = 20;
-var iterations = 20;
+var iterations = 100;
 const pi = Math.PI;
 const pi2 = pi / 2;
 const pi3 = pi / 3;
 
+var x0 = two.width / 2;
+var y0 = two.height / 2;
+
+
 nodeMap = {};
-border = [];
-border2 = [];
 
 function euclideanRadius(x) {
     var dx = x[0] + Math.sqrt(3) * x[1];
@@ -25,8 +27,9 @@ function remainingAngle(n) {
     return 12 - n.squares * 3 - n.triangles * 2;
 }
 
-const nodeComparator = (a, b) => remainingAngle(a) - remainingAngle(b);
-nodeHeap = new heap.Heap();
+const comparator = (a, b) => euclideanRadius(a.x) - euclideanRadius(b.x);
+nodeHeap = new MinHeap(comparator);
+forcedHeap = new MinHeap(comparator);
 
 // random int r: a <= r < b
 function randomInt(a, b) {
@@ -64,57 +67,122 @@ function move(x, angle) {
     return [x[0] + d[0], x[1] + d[1], x[2] + d[2], x[3] + d[3]];
 }
 
-function drawLine(x1, x2) {
-    var x0 = two.width / 2;
-    var y0 = two.height / 2;
-    p = two.makeLine(
-        x0 + side * (x1[0] + x1[1] * Math.sqrt(3)),
-        y0 + side * (x1[2] + x1[3] * Math.sqrt(3)),
-        x0 + side * (x2[0] + x2[1] * Math.sqrt(3)),
-        y0 + side * (x2[2] + x2[3] * Math.sqrt(3)));
+
+function drawText(t, x) {
+    p = two.makeText(t,
+        x0 + side * (x[0] + x[1] * Math.sqrt(3)),
+        y0 - side * (x[2] + x[3] * Math.sqrt(3)));
 }
 
+function drawLine(x1, x2) {
+    p = two.makeLine(
+        x0 + side * (x1[0] + x1[1] * Math.sqrt(3)),
+        y0 - side * (x1[2] + x1[3] * Math.sqrt(3)),
+        x0 + side * (x2[0] + x2[1] * Math.sqrt(3)),
+        y0 - side * (x2[2] + x2[3] * Math.sqrt(3)));
+}
+
+function drawCircle(x, color) {
+    p = two.makeCircle(
+        x0 + side * (x[0] + x[1] * Math.sqrt(3)),
+        y0 - side * (x[2] + x[3] * Math.sqrt(3)),
+        side/8);
+    p.fill = color;
+    p.stroke = color;
+}
+
+uuid = 1;
+label = 1;
 class Node {
     constructor(x, angle) {
+        this.id = uuid++;
         this.x = x;
         this.angle = angle;
         this.squares = 0;
         this.triangles = 0;
     }
 
-    makeShapes() {
-        var shapes = [];
-        if (this.squares > 2) {
-            for (var i = 0;i < 4 - this.squares;i++) {
-                shapes.push(3);
-            }
-            this.squares = 4;
-        }
-        else if (this.triangles > 3) {
-            for (var i = 0;i < 6 - this.squares;i++) {
-                shapes.push(2);
-            }
-            this.triangles = 6;
-        } 
-        else {
-            for (var i = 0;i < 2 - this.squares;i++) {
-                shapes.push(3);
-            }
-            for (var i = 0;i < 3 - this.triangles;i++) {
-                shapes.push(2);
-            }
-            this.squares = 2;
-            this.triangles = 3;
-        }
-        if (this.squares*3+this.triangles*2 > 12) {
-            console.log("Fault", this);
-        }
-        shuffle(shapes);
+    makeGuidedShapes(shapes) {
+        console.log("show", this);
         var angle = this.angle;
         for (var i = 0;i < shapes.length;i++) {
             this.makePolygon(angle, shapes[i]);
             angle = (angle + shapes[i]) % 12;
         }
+    }
+
+    makeShapes() {
+        if (this.squares >= 2 && this.triangles >= 3) {
+            return true;
+        }
+
+        console.log("finish", this);
+
+        var firstShape = [];
+        for (var i = 2;i <= 3;i++) {
+            if (this.tryPolygon(this.angle, i)) {
+                firstShape.push(i);
+            }
+        }
+        var lastShape = [];
+        if (this.squares + this.triangles < 4) {
+            for (var i = 2;i <= 3;i++) {
+                if (this.tryPolygon((this.angle  + 24 - 3 * this.squares - 2 * this.triangles - i) % 12, i)) {
+                    lastShape.push(i);
+                }
+            }
+        }
+        else {
+            lastShape = [2, 3];
+        }
+        console.log("check", firstShape, lastShape);
+        if (firstShape.length == 1) {
+            if (firstShape[0] == 2) {
+                this.triangles++;
+            }
+            else {
+                this.squares++;
+            }
+        }
+        if (lastShape.length == 1) {
+            if (lastShape[0] == 2) {
+                this.triangles++;
+            }
+            else {
+                this.squares++;
+            }
+        }
+
+        if (this.squares > 2 || this.triangles > 3 || firstShape.length == 0 || lastShape.length == 0) {
+            console.log("Fault", this);
+            drawCircle(this.x, "red");
+            return false;
+        }
+
+        var shapes = [];
+        for (var i = 0;i < 2 - this.squares;i++) {
+            shapes.push(3);
+        }
+        for (var i = 0;i < 3 - this.triangles;i++) {
+            shapes.push(2);
+        }
+        shuffle(shapes);
+        if (firstShape.length == 1) {
+            shapes.unshift(firstShape[0]);
+        }
+        if (lastShape.length == 1) {
+            shapes.push(lastShape[0]);
+        }
+        this.squares = 2;
+        this.triangles = 3;
+
+        var angle = this.angle;
+        for (var i = 0;i < shapes.length;i++) {
+            this.makePolygon(angle, shapes[i]);
+            angle = (angle + shapes[i]) % 12;
+        }
+        drawText(label++ + '-' + this.id, this.x);
+        return true;
     }
 
     mark(angle, shape) {
@@ -127,6 +195,51 @@ class Node {
         else {
             this.triangles += 1;
         }
+        if (this.squares >= 2 || this.triangles >= 3) {
+            forcedHeap.push(this);
+            drawCircle(this.x, "orange");
+        }
+    }
+
+    checkLine(x, angle, n) {
+        var fwd = x;
+        var bwd = x;
+        var points = 1;
+        for (var i = 0;i < n;i++) {
+            fwd = move(fwd, angle);
+            if (i > 0 && !nodeMap[fwd]) {
+                break;
+            }
+            points++;
+        }
+        for (var i = 0;i < n;i++) {
+            bwd = move(bwd, (angle + 6) % 12);
+            if (!nodeMap[bwd]) {
+                break;
+            }
+            points++;
+        }
+        return points <= n;
+    }
+
+    tryPolygon(angle, shape) {
+        var x = this.x;
+        for (var i = 0;i <= shape;i++) {
+            if (!this.checkLine(x, angle, 3)) {
+                return false;
+            }
+            var n = nodeMap[x];
+            if (n && shape == 2 && n.triangles >= 3) {
+                return false;
+            }
+            if (n && shape == 3 && n.squares >= 2) {
+                return false;
+            }
+            x = move(x, angle);
+            angle = (angle + 6 - shape) % 12;
+        }
+        //console.log("allow", angle, shape);
+        return true;
     }
 
     makePolygon(angle, shape) {
@@ -141,6 +254,7 @@ class Node {
             nodeMap[x2].mark(angle, shape);
             drawLine(x1, x2);
             x1 = x2;
+            console.log("touch", nodeMap[x2]);
         }
     }
 
@@ -148,79 +262,67 @@ class Node {
 
 nodeHeap.push(new Node([0, 0, 0, 0], 0));
 for (var i = 0;i < iterations;i++) {
-    var node = nodeHeap.pop();
-    console.log(remainingAngle(node));
-    node.makeShapes();
+    var node = forcedHeap.length > 0 ? forcedHeap.pop() : nodeHeap.pop();
+    if (!node.makeShapes()) {
+        break;
+    }
 }
 
+var pieces = [
+    [
+        [[0, 0, 0, 0], [2, 2, 3, 2, 3]],
+    ],
+    [
+        [[0, 0, 0, 0], [2, 2, 2, 3, 3]],
+        [[0, 0, -2, 0], [2, 2, 2]],
+        [[2, 0, 0, 0], [2, 2, 3]],
+        [[1, 0, 0, 1], [2, 3]],
+        [[-1, 0, 0, 1], [2, 3]],
+        [[-2, 0, 0, 0], [2, 2]],
+        [[-2, 0, -2, 0], [2, 3]],
+        [[-1, 0, -2, -1], [2, 3]],
+        [[1, 0, -2, -1], [2, 3]],
+        [[2, 0, -2, 0], [2]],
+        [[2, 1, -1, 0], [3, 3]],
+        [[-2, -1, -1, 0], [3, 3]],
+        [[2, 1, 1, 0], [2, 2]],
+        [[-2, -1, 1, 0], [2, 2]],
+        [[-2, -1, -3, 0], [2, 2]],
+        [[2, 1, -3, 0], [2, 2]],
+        [[4, 1, -1, 0], [2, 2, 2]],
+        [[-4, -1, -1, 0], [2, 2, 2]],
+    ],
+    [
+        [[0, 0, 0, 0], [2, 2, 2, 3, 3]],
+        [[0, 0, -2, 0], [2, 2, 2]],
+        [[2, 0, 0, 0], [2, 3, 2]],
+        [[2, 0, -2, 0], [2, 3]],
+        [[-2, 0, 0, 0], [3, 2, 2]],
+        [[-2, 0, -2, 0], [2, 3]],
+        [[1, 0, 0, 1], [3, 3]],
+        [[1, 0, -2, -1], [3, 3]],
+        [[-2, -1, -1, 0], [3, 3]],
+        [[3, 0, 0, 1], [2, 2]],
+        [[1, 0, 2, 1], [2, 2, 2]],
+        [[-1, 0, 0, 1], [2]],
+        [[-2, -1, 1, 0], [2, 2]],
+        [[-4, -1, -1, 0], [2, 2, 2]],
+        [[-2, -1, -3, 0], [2, 2]],
+        [[-1, 0, -2, -1], [2]],
+        [[1, 0, -4, -1], [2, 2, 2]],
+        [[3, 0, -2, -1], [2, 2]],
+        [[2, 1, -1, 0], [2, 2]],
+    ],
+];
 
-/*var s_radius = side * Math.sqrt(2) / 2;
-var t_radius = side * (Math.sqrt(3) - 1 / Math.sqrt(3)) / 2;
-var t_offset = side * (1 + 1 / Math.sqrt(3)) / 2;
-
-var s = two.makePolygon(0, 0, s_radius, 4);
-var t1 = two.makePolygon(t_offset, 0, t_radius, 3);
-var t2 = two.makePolygon(0, t_offset, t_radius, 3);
-var t3 = two.makePolygon(-t_offset, 0, t_radius, 3);
-var t4 = two.makePolygon(0, -t_offset, t_radius, 3);
-
-t1.rotation = pi / 2;
-t3.rotation = -pi / 2;
-t2.rotation = pi;
-
-
-var star = two.makeGroup(s, t1, t2, t3, t4)
-
-var net = two.makeGroup(star);
-net.position.set(two.width / 2, two.height / 2);
-
-var star2 = star.clone(net);
-star2.position.set(side * (3 + Math.sqrt(3)) / 4, -side * (1 + Math.sqrt(3)) / 4);
-star2.rotation = pi / 6;
-
-var star3 = star.clone(net);
-star3.position.set(side * (3 + Math.sqrt(3)) / 4, side * (1 + Math.sqrt(3)) / 4);
-star3.rotation = -pi / 6;
-
-var star4 = star.clone(net);
-star4.position.set(-side * (1 + Math.sqrt(3)) / 4, -side * (3 + Math.sqrt(3)) / 4);
-star4.rotation = pi / 2 + pi / 6;
-
-var star4 = star.clone(net);
-star4.position.set(-side * (1 + Math.sqrt(3)) / 4, side * (3 + Math.sqrt(3)) / 4);
-star4.rotation = - pi / 2 - pi / 6;
-
-var star5 = star.clone(net);
-star5.position.set(side / 2, side * (2 + Math.sqrt(3)) / 2);
-
-var star6 = star.clone(net);
-star6.position.set(side / 2, -side * (2 + Math.sqrt(3)) / 2);*/
-
-/*var x0 = 400;
-var y0 = 300;
-for (var i = 0;i < 12;i++) {
-    var x1 = x0 + side * Math.cos(i * pi / 6);
-    var y1 = y0 + side * Math.sin(i * pi / 6);
-    two.makeLine(x0, y0, x1, y1);
-    for (var j = 0;j < 12;j++) {
-        var x2 = x1 + side * Math.cos(j * pi / 6);
-        var y2 = y1 + side * Math.sin(j * pi / 6);
-        two.makeLine(x1, y1, x2, y2);
-        for (var k = 0;k < 12;k++) {
-            var x3 = x2 + side * Math.cos(k * pi / 6);
-            var y3 = y2 + side * Math.sin(k * pi / 6);
-            two.makeLine(x2, y2, x3, y3);
-            for (var l = 0;l < 12;l++) {
-                var x4 = x3 + side * Math.cos(l * pi / 6);
-                var y4 = y3 + side * Math.sin(l * pi / 6);
-                two.makeLine(x3, y3, x4, y4);
-                for (var m = 0;m < 12;m++) {
-                    var x5 = x4 + side * Math.cos(m * pi / 6);
-                    var y5 = y4 + side * Math.sin(m * pi / 6);
-                    two.makeLine(x4, y4, x5, y5);
-                }
-            }
-        }
+/*
+for (var i = 0;i < pieces.length;i++) {
+    x0 = (i % 4) * two.width / 4 + two.width / 8;
+    y0 = Math.floor(i / 4) * two.height / 4 + two.height / 8;
+    nodeMap = {};
+    nodeMap[pieces[i][0][0]] = new Node(pieces[i][0][0], 0);
+    for (var j = 0;j < pieces[i].length;j++) {
+        nodeMap[pieces[i][j][0]].makeGuidedShapes(pieces[i][j][1]);
     }
 }*/
 
